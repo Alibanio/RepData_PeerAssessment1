@@ -1,25 +1,131 @@
----
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
----
+First Assignment for the Coursera Reproducible Research Course  
+==============================================================
 
+At the very beginning, I will load the libraries I will need.
+```{r Libraries, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(lubridate)
+```
 
-## Loading and preprocessing the data
+1.  Reading the data with **read.csv** and storaging the raw data under a **dplyr** data frame 
+```{r reading data}
+rawd <- read.csv(file = "Data/activity.csv",na.strings = "NA",colClasses = c("numeric","Date","numeric"))
+rawd <- tbl_df(rawd)
+summary(rawd)
+```
 
+2.  Transformation of the date variable into a factor and group each other variable by the date.
+```{r grouping data, results='hide'}
+gdata <- mutate(rawd, date = as.factor(date))
+gdata <- group_by(gdata, date)
+```
 
+3.  Create a new date frame with three new varibles: **totalsteps**, **mean** and **median**  
+3.1.  The new variables **mean and median** represent the mean and median total steps for **each day**.  
+3.2.  Remove days were no steps were taken.
+```{r summarize data}
+sdata <- summarize(gdata, 
+                   totalsteps = sum(steps, na.rm = TRUE),
+                   mean = mean(steps,na.rm = TRUE), 
+                   median = median(steps, na.rm = TRUE))
+sdata <- filter(sdata, totalsteps > 0)
+head(sdata,n = 5)
+```
 
-## What is mean total number of steps taken per day?
+4.  Plot an histogram for the *total number of steps taken* **each day**. The plot will be made based on the summarized data frame **sdata**.
 
+```{r histogram,fig.height=4}
+with(sdata, hist(totalsteps, 
+                 main = "Histogram of Total Number of Steps by Day",
+                 xlab = "Number of Steps",
+                 ylab = "Frequency",
+                 col = "grey"))
+```
 
+5.  This step calculate the **mean and median** of the total number of steps during the period
+```{r mean and median}
+totalmean <- mean(sdata$totalsteps,na.rm = TRUE)
+totalmedian <- median(sdata$totalsteps, na.rm = TRUE)
+```
 
-## What is the average daily activity pattern?
+The results are:  
+Mean: $`r as.integer(totalmean)`$  
+Median: $`r as.integer(totalmedian)`$  
+      
+6.    Now its time to create a time series for the average number of steps in each interval during the day.  
+6.1.  First the data frame **gdata** variable interval is tranformed into a factor.  
+6.2.  Then it is **gdata** is grouped by the variable **interval** instead of the previous one.  
+6.3.   **gdata** is summarize by the new grouping condition and **interval** is trasformed back into a         numeric variable, it important to transform first into character so the value would not be lost.       All those steps are performed into a new data frame **idata**  
+6.4.   With **idata** the plot is performed.
+```{r Time Series, fig.height=4}
+      gdata <- mutate(gdata, interval = as.factor(interval))
+      gdata <- group_by(gdata, interval)
+      idata <- summarize(gdata, intervalmean = mean(steps, na.rm=TRUE))
+      idata <- mutate(idata, interval = as.numeric(as.character(interval)))
+      with(idata, plot(interval, intervalmean,
+                       type = "l",
+                       main = "5 Minutes Average Number of Steps",
+                       xlab = "5 minutes interval",
+                       ylab = "Average Number of steps"))
+```
 
+7.    Now its time to show the interval that contains the maximum number of steps during the day
+```{r Maximum number of steps}
+      maxim <- idata[which.max(idata$intervalmean),1]
+```
+The maximum interval is: $`r as.integer(maxim)`$  
+  
+8.    To calculate the number of missing values "**NA**", the sum of the function *is.na* is going to be taken.
+```{r Calculating NA}
+      sna <- sum(is.na(rawd[,1]))   
+```
+There are $`r as.integer(sna)`$ missing values in the raw data.  
 
+9.    The strategy used to fill the missing values is based on the mean value for the missing value time period. This means that if a missing value is in the time period **5**, the code will alocate the mean value for that period on its place. A new data frame **fild** is then created.  
+9.1   The Histogram is created in the same way it was made in prior steps.  
+9.2   The **mean** and **median** are also calculated in the same way.  
+```{r Replacing the missing values}
+      fild <- rawd
+      for(i in 1:nrow(fild)){
+                if(is.na(fild[i,1])==TRUE){
+                        it <- fild[i,3]
+                        fild[i,1] <- idata[which(idata[,1]==as.integer(fild[i,3])),2]
+                }
+      }
+      gdata <- mutate(fild, date = as.factor(date))
+      gdata <- group_by(gdata, date)
+      fdata <- summarize(gdata, totalsteps=sum(steps))
+      ftotalmean <- mean(fdata$totalsteps)
+      ftotalmedian <- median(fdata$totalsteps)
+      with(fdata, hist(totalsteps,
+                       main = "Histogram of Total Steps with Filled Data",
+                       xlab = "Number of Steps",
+                       ylab = "Frequency",
+                       col = "grey"))
+```
 
-## Imputing missing values
+The new mean and median are as follow:  
+- Mean: $`r as.integer(ftotalmean)`$  
+- Median: $`r as.integer(ftotalmedian)`$  
 
+The difference between the new value and the old one, for each value is:  
+- Mean: $`r as.numeric(ftotalmean - totalmean)`$  
+- Median: $`r round(as.numeric(ftotalmedian - totalmedian),2)`$  
 
-
-## Are there differences in activity patterns between weekdays and weekends?
+10. Now it is time to separate weekdays and weekends. Using the **dplyr** mutate, group_by and summarize functions to create two new variables is the method chosen. Those variable are going to be ploted with ggplot2, using the extraGrid library to arrange them into a panel layout.
+```{r Weekend and Weekdays Panel}
+fild <- mutate(fild, day = factor(1*(wday(ymd(date))>=2 & wday(ymd(date)) <= 6),labels = c("weekend","weekday")))
+weekend <- filter(fild, day == "weekend")
+weekend <- weekend %>% group_by(interval) %>% summarize(weekendmean = mean(steps))
+chartwend <- ggplot(data = weekend, aes(x = interval, y = weekendmean)) + 
+                    geom_line() + ggtitle("Average Steps during the Weekends") +
+                    ylab("Number of Steps")
+weekday <- filter(fild, day == "weekday")
+weekday <- weekday %>% group_by(interval) %>% summarize(weekdaymean = mean(steps))
+chartwday <- ggplot(data = weekday, aes(x = interval, y = weekdaymean)) + 
+                    geom_line() + ggtitle("Average Steps in the Weekdays") +
+                    ylab("Number of Steps")
+grid.arrange(chartwend, chartwday)   
+```
